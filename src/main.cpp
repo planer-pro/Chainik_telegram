@@ -353,7 +353,7 @@ void setupWiFiManager()
 
     wm.setConfigPortalTimeout(180);
 
-    if (!wm.autoConnect("ESP8266-Config"))
+    if (!wm.autoConnect("Teapot-Config"))
     {
         Serial.println("Failed to connect and hit timeout");
         delay(3000);
