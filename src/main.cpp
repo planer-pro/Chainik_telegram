@@ -147,6 +147,7 @@ void loop()
 void getTempData()
 {
     static uint32_t _tmTmp = 0;
+    static uint16_t inpVal = 0;
 
     if (millis() - _tmTmp > 250) // get temp every 0.25 sec
     {
@@ -155,9 +156,12 @@ void getTempData()
         // an = (uint16_t)round(calculateTempUpper(analogRead(NTC_PIN), 10000.0));
 
         for (size_t i = 0; i < AVEARGE_COUNTS; i++)
-            an += analogRead(NTC_PIN);
+            inpVal += analogRead(NTC_PIN);
 
-        an = (an / AVEARGE_COUNTS / 8.0) - 3.0; // average degrees value and convert to temperature
+        inpVal = (inpVal / AVEARGE_COUNTS / 8.0) - 3.0; // average degrees value and convert to temperature
+
+        an = inpVal;
+        inpVal = 0;
     }
 }
 
