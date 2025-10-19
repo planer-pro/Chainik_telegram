@@ -112,24 +112,14 @@ void setup()
         welcome += "/hot - Hot mode (boil to 100 degree)\n";
         welcome += "/termo - Termo mode (hold 80 degree\n";
         welcome += "/off - All modes OFF\n";
+        welcome += "/hXX - Hot mode, XX - heating value\n";
+        welcome += "/tXX - Termo mode, XX - heating value\n";
+
         bot->sendMessage(chatId, welcome, "");
         bot->sendMessage(chatId, String(OTA_HOSTNAME) + " Ready", "");
     }
 
     digitalWrite(LED_PIN, HIGH); // Led off, ready for work
-
-    // // Инициализация аппаратного таймера
-    // noInterrupts();                                 // Отключаем прерывания на время настройки
-    // timer1_isr_init();                              // Инициализация таймера 1
-    // timer1_attachInterrupt(ledHandler);             // Привязка обработчика
-    // timer1_enable(TIM_DIV16, TIM_EDGE, TIM_SINGLE); // Делитель 16
-    // // Расчет значения для 200 мс:
-    // // CPU freq: 80 MHz
-    // // Делитель 16: 80MHz/16 = 5MHz (0.2 μs на тик)
-    // // 200 ms = 0.2 секунды → 0.2 / 0.0000002 = 1,000,000 тиков
-    // // Но таймер 16-битный (макс 65535), поэтому используем 12500 * 80 = 1,000,000
-    // timer1_write(12500); // 12500 тиков * 80 = 1,000,000 тиков = 200 мс
-    // interrupts();        // Включаем прерывания
 }
 
 void loop()
@@ -152,8 +142,6 @@ void getTempData()
     if (millis() - _tmTmp > 250) // get temp every 0.25 sec
     {
         _tmTmp = millis();
-
-        // an = (uint16_t)round(calculateTempUpper(analogRead(NTC_PIN), 10000.0));
 
         for (size_t i = 0; i < AVEARGE_COUNTS; i++)
             inpVal += analogRead(NTC_PIN);
@@ -340,7 +328,7 @@ void setHeaterHot()
         {
             digitalWrite(HEATER_PIN, HIGH);
 
-            bot->sendMessage(chatId, "Hot set to " + String(hotVal) + " C", "");
+            bot->sendMessage(chatId, "Set hot mode to " + String(hotVal) + " C", "");
 
             currentMode = HOT;
         }
@@ -354,11 +342,11 @@ void setHeaterTermo()
     if (termoVal > 0 && termoVal <= 100)
     {
         if (an > termoVal)
-            bot->sendMessage(chatId, "Curent temp now above requested", "");
+            bot->sendMessage(chatId, "Curent temp above requested", "");
         else
             digitalWrite(HEATER_PIN, HIGH);
 
-        bot->sendMessage(chatId, "Termo set to " + String(termoVal) + " C", "");
+        bot->sendMessage(chatId, "Set termo mode to " + String(termoVal) + " C", "");
 
         currentMode = TERMO;
     }
@@ -465,6 +453,7 @@ void saveConfig(const char *token, const char *chat)
 void saveLastMessageId(long id)
 {
     File file = LittleFS.open("/last_msg_id.txt", "w");
+
     if (file)
     {
         file.print(id);
