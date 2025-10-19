@@ -112,8 +112,8 @@ void setup()
         welcome += "/hot - Hot mode (boil to 100 degree)\n";
         welcome += "/termo - Termo mode (hold 80 degree\n";
         welcome += "/off - All modes OFF\n";
-        welcome += "/hXX - Hot mode, XX - heating value\n";
-        welcome += "/tXX - Termo mode, XX - heating value\n";
+        welcome += "/h50 - Example: h - Hot mode, 50 - heating value\n";
+        welcome += "/t50 - Example: t - Termo mode, 50 - heating value\n";
 
         bot->sendMessage(chatId, welcome, "");
         bot->sendMessage(chatId, String(OTA_HOSTNAME) + " Ready", "");
@@ -256,15 +256,15 @@ void parseCommand(String command)
     }
     else if (command.equalsIgnoreCase("/off"))
         setHeaterOff();
-    else if (command.startsWith("t"))
+    else if (command.startsWith("/t"))
     {
-        termoVal = command.substring(1).toInt();
+        termoVal = command.substring(2).toInt();
 
         setHeaterTermo();
     }
-    else if (command.startsWith("h"))
+    else if (command.startsWith("/h"))
     {
-        hotVal = command.substring(1).toInt();
+        hotVal = command.substring(2).toInt();
 
         setHeaterHot();
     }
@@ -323,7 +323,7 @@ void setHeaterHot()
     if (termoVal > 0 && termoVal <= 100)
     {
         if (an > hotVal)
-            bot->sendMessage(chatId, "Hot impossible to set, hot value above current temp", "");
+            bot->sendMessage(chatId, "Impossible to set hot mode, value above current temp", "");
         else
         {
             digitalWrite(HEATER_PIN, HIGH);
