@@ -11,13 +11,11 @@
 #define OTA_HOSTNAME "Teapot"
 
 #define AVEARGE_COUNTS 10
-#define HOT_VAL 100
-#define TERMO_VAL 80
 #define HYSTERESIS 10
 
 #define LED_PIN LED_BUILTIN // LED pin
-#define HEATER_PIN 12       // D6
-#define BUTT_PIN 14         // D5
+#define HEATER_PIN D6
+#define BUTT_PIN D5
 #define NTC_PIN A0
 
 enum
@@ -31,8 +29,10 @@ String botToken;
 String chatId;
 String welcome;
 uint32_t ledTm = 0;
-int16_t an = 0, anOld = 0;
+int16_t an = 0;
 uint8_t currentMode = OFF;
+uint8_t hotVal = 100;
+uint8_t termoVal = 80;
 
 WiFiClientSecure secured_client;
 UniversalTelegramBot *bot;
@@ -46,7 +46,7 @@ void parseCommand(String command);
 void saveLastMessageId(long id); // <<< ИЗМЕНЕНИЕ: Добавлен прототип функции сохранения ID
 long loadLastMessageId();        // <<< ИЗМЕНЕНИЕ: Добавлен прототип функции загрузки ID
 void getTempData();
-void buttonHandler();
+// void buttonHandler();
 void telegramHandler();
 void heaterHandler();
 // void ledHandler();
@@ -61,8 +61,8 @@ void setup()
     Serial.begin(115200);
     Serial.println("\nStarting...");
 
-    pinMode(BUTT_PIN, INPUT_PULLUP);
-    pinMode(LED_PIN, OUTPUT);
+    // pinMode(BUTT_PIN, INPUT_PULLUP);
+    // pinMode(LED_PIN, OUTPUT);
     pinMode(NTC_PIN, INPUT);
     pinMode(HEATER_PIN, OUTPUT);
 
@@ -136,8 +136,8 @@ void loop()
 {
     ArduinoOTA.handle();
 
-    getTempData();     // get current temp data
-    buttonHandler();   // button control handler
+    getTempData(); // get current temp data
+    // buttonHandler();   // button control handler
     telegramHandler(); // telegram messages handler
     heaterHandler();   // heater process handler
 }
@@ -165,21 +165,23 @@ void getTempData()
     }
 }
 
-void buttonHandler()
-{
-    static uint32_t btnTm = 0;
+// void buttonHandler()
+// {
+//     static uint32_t btnTm = 0;
 
-    if (!digitalRead(BUTT_PIN) && millis() - btnTm > 1000)
-    {
-        btnTm = millis();
+//     if (!digitalRead(BUTT_PIN) && millis() - btnTm > 1000)
+//     {
+//         btnTm = millis();
 
-        if (currentMode != HOT)
-            setHeaterHot();
-
-        else
-            setHeaterOff();
-    }
-}
+//         if (currentMode != HOT)
+//         {
+//             hotVal = 100;
+//             setHeaterHot();
+//         }
+//         else
+//             setHeaterOff();
+//     }
+// }
 
 void telegramHandler()
 {
@@ -254,17 +256,32 @@ void parseCommand(String command)
         delay(1000); // Небольшая задержка, чтобы сообщение успело отправиться
         ESP.restart();
     }
-    else
+    else if (command.equalsIgnoreCase("/hot"))
     {
-        if (command.equalsIgnoreCase("/hot"))
-            setHeaterHot();
-        else if (command.equalsIgnoreCase("/termo"))
-            setHeaterTermo();
-        else if (command.equalsIgnoreCase("/off"))
-            setHeaterOff();
-        else
-            bot->sendMessage(chatId, "Invalid command: " + command, "");
+        hotVal = 100;
+        setHeaterHot();
     }
+    else if (command.equalsIgnoreCase("/termo"))
+    {
+        termoVal = 80;
+        setHeaterTermo();
+    }
+    else if (command.equalsIgnoreCase("/off"))
+        setHeaterOff();
+    else if (command.startsWith("t"))
+    {
+        termoVal = command.substring(1).toInt();
+
+        setHeaterTermo();
+    }
+    else if (command.startsWith("h"))
+    {
+        hotVal = command.substring(1).toInt();
+
+        setHeaterHot();
+    }
+    else
+        bot->sendMessage(chatId, "Invalid command: " + command, "");
 }
 
 void heaterHandler()
@@ -272,16 +289,16 @@ void heaterHandler()
     switch (currentMode)
     {
     case HOT:
-        if (an >= HOT_VAL)
+        if (an >= hotVal)
         {
             bot->sendMessage(chatId, "Hot complete", "");
             setHeaterOff();
         }
         break;
     case TERMO:
-        if (an >= TERMO_VAL)
+        if (an >= termoVal)
             digitalWrite(HEATER_PIN, LOW);
-        else if (an < TERMO_VAL - HYSTERESIS)
+        else if (an < termoVal - HYSTERESIS)
             digitalWrite(HEATER_PIN, HIGH);
         break;
     }
@@ -315,18 +332,38 @@ void heaterHandler()
 
 void setHeaterHot()
 {
-    digitalWrite(HEATER_PIN, HIGH);
-    bot->sendMessage(chatId, "Hot mode ENABLED", "");
-    currentMode = HOT;
+    if (termoVal > 0 && termoVal <= 100)
+    {
+        if (an > hotVal)
+            bot->sendMessage(chatId, "Hot impossible to set, hot value above current temp", "");
+        else
+        {
+            digitalWrite(HEATER_PIN, HIGH);
+
+            bot->sendMessage(chatId, "Hot set to " + String(hotVal) + " C", "");
+
+            currentMode = HOT;
+        }
+    }
+    else
+        bot->sendMessage(chatId, "Invalid hot value", "");
 }
 
 void setHeaterTermo()
 {
-    if (an > TERMO_VAL)
-        bot->sendMessage(chatId, "Curent temp above limit", "");
-    digitalWrite(HEATER_PIN, HIGH);
-    bot->sendMessage(chatId, "Termo mode ENABLED", "");
-    currentMode = TERMO;
+    if (termoVal > 0 && termoVal <= 100)
+    {
+        if (an > termoVal)
+            bot->sendMessage(chatId, "Curent temp now above requested", "");
+        else
+            digitalWrite(HEATER_PIN, HIGH);
+
+        bot->sendMessage(chatId, "Termo set to " + String(termoVal) + " C", "");
+
+        currentMode = TERMO;
+    }
+    else
+        bot->sendMessage(chatId, "Invalid termo value", "");
 }
 
 void setHeaterOff()
