@@ -62,7 +62,7 @@ void setup()
     Serial.println("\nStarting...");
 
     // pinMode(BUTT_PIN, INPUT_PULLUP);
-    // pinMode(LED_PIN, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
     pinMode(NTC_PIN, INPUT);
     pinMode(HEATER_PIN, OUTPUT);
 
