@@ -29,14 +29,18 @@ String botToken;
 String chatId;
 String welcome;
 uint32_t ledTm = 0;
+volatile uint32_t btnPressedTime = 0; // for debounce
+volatile bool btnFlag = false;
+volatile uint8_t currentMode = OFF;
+volatile bool irqBtnStage = true;
 int16_t an = 0;
-uint8_t currentMode = OFF;
 uint8_t hotVal = 100;
 uint8_t termoVal = 80;
 
 WiFiClientSecure secured_client;
 UniversalTelegramBot *bot;
 
+void IRAM_ATTR btnIrq();
 void loadConfig();
 void saveConfig(const char *token, const char *chat);
 void setupWiFiManager();
@@ -65,6 +69,8 @@ void setup()
     pinMode(LED_PIN, OUTPUT);
     pinMode(NTC_PIN, INPUT);
     pinMode(HEATER_PIN, OUTPUT);
+
+    attachInterrupt(digitalPinToInterrupt(BUTT_PIN), btnIrq, CHANGE); // attach button interrupt
 
     digitalWrite(HEATER_PIN, LOW); // heater off by default
     digitalWrite(LED_PIN, LOW);    // Led on, start configuring mode
@@ -132,7 +138,33 @@ void loop()
     heaterHandler();   // heater process handler
 }
 
-// --- Реализация функций ---
+void IRAM_ATTR btnIrq() // button interrupt
+{
+    if (irqBtnStage)
+    {
+        irqBtnStage = false;
+        btnPressedTime = millis();
+    }
+    else
+    {
+        detachInterrupt(digitalPinToInterrupt(BUTT_PIN)); // for debounce
+
+        if (millis() - btnPressedTime < 500)
+        {
+            if (currentMode == HOT || currentMode == TERMO)
+                currentMode = OFF;
+            else // if (currentMode == OFF)
+                currentMode = HOT;
+        }
+        else
+        {
+            currentMode = TERMO;
+        }
+
+        irqBtnStage = true;
+        btnFlag = true;
+    }
+}
 
 void getTempData()
 {
@@ -155,19 +187,38 @@ void getTempData()
 
 void buttonHandler()
 {
-    static uint32_t btnTm = 0;
-
-    if (!digitalRead(BUTT_PIN) && millis() - btnTm > 1000)
+    if (btnFlag)
     {
-        btnTm = millis();
+        btnFlag = false;
 
-        if (currentMode != HOT)
+        switch (currentMode)
         {
+        case HOT:
             hotVal = 100;
+
             setHeaterHot();
-        }
-        else
+            // #if DEBUG_TELEGRAM
+            Serial.println("Btn Hot mode");
+            // #endif
+
+            break;
+        case TERMO:
+            termoVal = 80;
+
+            setHeaterTermo();
+            // #if DEBUG_TELEGRAM
+            Serial.println("Btn Termo mode");
+            // #endif
+            break;
+        case OFF: // if (currentMode == OFF)
             setHeaterOff();
+            // #if DEBUG_TELEGRAM
+            Serial.println("Btn OFF mode");
+            // #endif
+            break;
+        }
+
+        attachInterrupt(digitalPinToInterrupt(BUTT_PIN), btnIrq, CHANGE);
     }
 }
 
@@ -221,19 +272,25 @@ void parseCommand(String command)
         status += "RSSI: " + String(WiFi.RSSI()) + " dBm\n";
         status += "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n";
         status += "Mode: ";
+
         switch (currentMode)
         {
         case HOT:
             status += "Hot\n";
+
             break;
         case TERMO:
             status += "Termo\n";
+
             break;
         default:
             status += "Off\n";
+
             break;
         }
+
         status += "Temp: " + String(an) + " C\n";
+
         bot->sendMessage(chatId, status, "");
     }
     else if (command.equalsIgnoreCase("/restart"))
@@ -241,17 +298,21 @@ void parseCommand(String command)
         bot->sendMessage(chatId, "Restarting...", "");
         // <<< ИЗМЕНЕНИЕ: Сохраняем ID перед перезагрузкой
         saveLastMessageId(bot->last_message_received);
+
         delay(1000); // Небольшая задержка, чтобы сообщение успело отправиться
+
         ESP.restart();
     }
     else if (command.equalsIgnoreCase("/hot"))
     {
         hotVal = 100;
+
         setHeaterHot();
     }
     else if (command.equalsIgnoreCase("/termo"))
     {
         termoVal = 80;
+
         setHeaterTermo();
     }
     else if (command.equalsIgnoreCase("/off"))
@@ -280,14 +341,17 @@ void heaterHandler()
         if (an >= hotVal)
         {
             bot->sendMessage(chatId, "Hot complete", "");
+
             setHeaterOff();
         }
+
         break;
     case TERMO:
         if (an >= termoVal)
             digitalWrite(HEATER_PIN, LOW);
         else if (an < termoVal - HYSTERESIS)
             digitalWrite(HEATER_PIN, HIGH);
+
         break;
     }
 }
@@ -326,11 +390,11 @@ void setHeaterHot()
             bot->sendMessage(chatId, "Impossible to set hot mode, value above current temp", "");
         else
         {
+            currentMode = HOT;
+
             digitalWrite(HEATER_PIN, HIGH);
 
             bot->sendMessage(chatId, "Set hot mode to " + String(hotVal) + " C", "");
-
-            currentMode = HOT;
         }
     }
     else
@@ -341,14 +405,14 @@ void setHeaterTermo()
 {
     if (termoVal > 0 && termoVal <= 100)
     {
+        currentMode = TERMO;
+
         if (an > termoVal)
             bot->sendMessage(chatId, "Curent temp above requested", "");
         else
             digitalWrite(HEATER_PIN, HIGH);
 
         bot->sendMessage(chatId, "Set termo mode to " + String(termoVal) + " C", "");
-
-        currentMode = TERMO;
     }
     else
         bot->sendMessage(chatId, "Invalid termo value", "");
@@ -356,16 +420,20 @@ void setHeaterTermo()
 
 void setHeaterOff()
 {
-    digitalWrite(HEATER_PIN, LOW);
-    bot->sendMessage(chatId, "All mods are OFF", "");
     currentMode = OFF;
+
+    digitalWrite(HEATER_PIN, LOW);
+
+    bot->sendMessage(chatId, "All mods are OFF", "");
 }
 
 void setupWiFiManager()
 {
     WiFiManager wm;
+
     char token_buf[64];
     char chat_buf[32];
+
     botToken.toCharArray(token_buf, sizeof(token_buf));
     chatId.toCharArray(chat_buf, sizeof(chat_buf));
 
@@ -385,8 +453,11 @@ void setupWiFiManager()
     if (!wm.autoConnect("Teapot-Config"))
     {
         Serial.println("Failed to connect and hit timeout");
+
         delay(3000);
+
         ESP.restart();
+
         delay(5000);
     }
 }
@@ -396,6 +467,7 @@ void loadConfig()
     if (LittleFS.exists("/config.json"))
     {
         File configFile = LittleFS.open("/config.json", "r");
+
         if (configFile)
         {
             JsonDocument doc;
