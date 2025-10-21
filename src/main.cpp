@@ -46,7 +46,7 @@ void parseCommand(String command);
 void saveLastMessageId(long id); // <<< ИЗМЕНЕНИЕ: Добавлен прототип функции сохранения ID
 long loadLastMessageId();        // <<< ИЗМЕНЕНИЕ: Добавлен прототип функции загрузки ID
 void getTempData();
-// void buttonHandler();
+void buttonHandler();
 void telegramHandler();
 void heaterHandler();
 // void ledHandler();
@@ -57,11 +57,11 @@ void setHeaterOff();
 void setup()
 {
     delay(1000); // delay to be ready
-
     Serial.begin(115200);
+    delay(1000);
     Serial.println("\nStarting...");
 
-    // pinMode(BUTT_PIN, INPUT_PULLUP);
+    pinMode(BUTT_PIN, INPUT_PULLUP);
     pinMode(LED_PIN, OUTPUT);
     pinMode(NTC_PIN, INPUT);
     pinMode(HEATER_PIN, OUTPUT);
@@ -126,8 +126,8 @@ void loop()
 {
     ArduinoOTA.handle();
 
-    getTempData(); // get current temp data
-    // buttonHandler();   // button control handler
+    getTempData();     // get current temp data
+    buttonHandler();   // button control handler
     telegramHandler(); // telegram messages handler
     heaterHandler();   // heater process handler
 }
@@ -153,23 +153,23 @@ void getTempData()
     }
 }
 
-// void buttonHandler()
-// {
-//     static uint32_t btnTm = 0;
+void buttonHandler()
+{
+    static uint32_t btnTm = 0;
 
-//     if (!digitalRead(BUTT_PIN) && millis() - btnTm > 1000)
-//     {
-//         btnTm = millis();
+    if (!digitalRead(BUTT_PIN) && millis() - btnTm > 1000)
+    {
+        btnTm = millis();
 
-//         if (currentMode != HOT)
-//         {
-//             hotVal = 100;
-//             setHeaterHot();
-//         }
-//         else
-//             setHeaterOff();
-//     }
-// }
+        if (currentMode != HOT)
+        {
+            hotVal = 100;
+            setHeaterHot();
+        }
+        else
+            setHeaterOff();
+    }
+}
 
 void telegramHandler()
 {
