@@ -15,7 +15,7 @@
 
 #define LED_PIN LED_BUILTIN // LED pin
 #define HEATER_PIN D6
-#define BUTT_PIN D5
+#define BUTT_PIN D2
 #define NTC_PIN A0
 
 enum
@@ -29,10 +29,9 @@ String botToken;
 String chatId;
 String welcome;
 uint32_t ledTm = 0;
-volatile uint32_t btnPressedTime = 0; // for debounce
-volatile bool btnFlag = false;
+volatile uint32_t btnPressedTime = 0; // for calculate hold btn time
+volatile bool btnFlag = false;        // if btn activated
 volatile uint8_t currentMode = OFF;
-volatile bool irqBtnStage = true;
 int16_t an = 0;
 uint8_t hotVal = 100;
 uint8_t termoVal = 80;
@@ -65,7 +64,7 @@ void setup()
     delay(1000);
     Serial.println("\nStarting...");
 
-    pinMode(BUTT_PIN, INPUT_PULLUP);
+    pinMode(BUTT_PIN, INPUT);
     pinMode(LED_PIN, OUTPUT);
     pinMode(NTC_PIN, INPUT);
     pinMode(HEATER_PIN, OUTPUT);
@@ -107,6 +106,7 @@ void setup()
         Serial.println("Bot Token is not set. Telegram bot disabled.");
 
     setupOTA();
+
     Serial.println("OTA Ready");
 
     if (bot)
@@ -140,9 +140,8 @@ void loop()
 
 void IRAM_ATTR btnIrq() // button interrupt
 {
-    if (irqBtnStage)
+    if (!digitalRead(BUTT_PIN))
     {
-        irqBtnStage = false;
         btnPressedTime = millis();
     }
     else
@@ -153,15 +152,17 @@ void IRAM_ATTR btnIrq() // button interrupt
         {
             if (currentMode == HOT || currentMode == TERMO)
                 currentMode = OFF;
-            else // if (currentMode == OFF)
+            else if (currentMode == OFF && an < hotVal)
                 currentMode = HOT;
         }
         else
         {
-            currentMode = TERMO;
+            if (currentMode == OFF)
+                currentMode = TERMO;
+            else
+                currentMode = OFF;
         }
 
-        irqBtnStage = true;
         btnFlag = true;
     }
 }
@@ -197,24 +198,29 @@ void buttonHandler()
             hotVal = 100;
 
             setHeaterHot();
-            // #if DEBUG_TELEGRAM
-            Serial.println("Btn Hot mode");
-            // #endif
+
+#if DEBUG_TELEGRAM
+            Serial.println("Btn HOT mode");
+#endif
 
             break;
         case TERMO:
             termoVal = 80;
 
             setHeaterTermo();
-            // #if DEBUG_TELEGRAM
-            Serial.println("Btn Termo mode");
-            // #endif
+
+#if DEBUG_TELEGRAM
+            Serial.println("Btn TERMO mode");
+#endif
+
             break;
         case OFF: // if (currentMode == OFF)
             setHeaterOff();
+
             // #if DEBUG_TELEGRAM
             Serial.println("Btn OFF mode");
             // #endif
+
             break;
         }
 
@@ -276,20 +282,37 @@ void parseCommand(String command)
         switch (currentMode)
         {
         case HOT:
-            status += "Hot\n";
+            status += "HOT\n";
 
             break;
         case TERMO:
-            status += "Termo\n";
+            status += "TERMO\n";
 
             break;
         default:
-            status += "Off\n";
+            status += "OFF\n";
 
             break;
         }
 
-        status += "Temp: " + String(an) + " C\n";
+        status += "Requested temp: ";
+
+        switch (currentMode)
+        {
+        case HOT:
+            status += String(hotVal) + " C\n";
+            break;
+        case TERMO:
+            status += String(termoVal) + " C\n";
+
+            break;
+        default:
+            status += "-- C\n";
+
+            break;
+        }
+
+        status += "Current temp: " + String(an) + " C\n";
 
         bot->sendMessage(chatId, status, "");
     }
@@ -387,18 +410,18 @@ void setHeaterHot()
     if (termoVal > 0 && termoVal <= 100)
     {
         if (an > hotVal)
-            bot->sendMessage(chatId, "Impossible to set hot mode, value above current temp", "");
+            bot->sendMessage(chatId, "Impossible to set HOT mode, value above current temp", "");
         else
         {
             currentMode = HOT;
 
             digitalWrite(HEATER_PIN, HIGH);
 
-            bot->sendMessage(chatId, "Set hot mode to " + String(hotVal) + " C", "");
+            bot->sendMessage(chatId, "Set HOT mode to " + String(hotVal) + " C", "");
         }
     }
     else
-        bot->sendMessage(chatId, "Invalid hot value", "");
+        bot->sendMessage(chatId, "Invalid HOT value", "");
 }
 
 void setHeaterTermo()
@@ -412,10 +435,10 @@ void setHeaterTermo()
         else
             digitalWrite(HEATER_PIN, HIGH);
 
-        bot->sendMessage(chatId, "Set termo mode to " + String(termoVal) + " C", "");
+        bot->sendMessage(chatId, "Set TERMO mode to " + String(termoVal) + " C", "");
     }
     else
-        bot->sendMessage(chatId, "Invalid termo value", "");
+        bot->sendMessage(chatId, "Invalid TERMO value", "");
 }
 
 void setHeaterOff()
