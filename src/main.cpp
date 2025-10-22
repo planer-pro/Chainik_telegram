@@ -7,6 +7,7 @@
 #include <WiFiManager.h>
 #include <ArduinoJson.h>
 
+#define DEBUG_SERIAL true
 #define BOT_POLLING_INTERVAL_MS 1000
 #define OTA_HOSTNAME "Teapot"
 
@@ -35,6 +36,7 @@ volatile uint8_t currentMode = OFF;
 int16_t an = 0;
 uint8_t hotVal = 100;
 uint8_t termoVal = 80;
+bool oneShot = true;
 
 WiFiClientSecure secured_client;
 UniversalTelegramBot *bot;
@@ -199,9 +201,8 @@ void buttonHandler()
 
             setHeaterHot();
 
-#if DEBUG_TELEGRAM
-            Serial.println("Btn HOT mode");
-#endif
+            if (DEBUG_SERIAL)
+                Serial.println("Btn HOT mode");
 
             break;
         case TERMO:
@@ -209,17 +210,15 @@ void buttonHandler()
 
             setHeaterTermo();
 
-#if DEBUG_TELEGRAM
-            Serial.println("Btn TERMO mode");
-#endif
+            if (DEBUG_SERIAL)
+                Serial.println("Btn TERMO mode");
 
             break;
         case OFF: // if (currentMode == OFF)
             setHeaterOff();
 
-            // #if DEBUG_TELEGRAM
-            Serial.println("Btn OFF mode");
-            // #endif
+            if (DEBUG_SERIAL)
+                Serial.println("Btn OFF mode");
 
             break;
         }
@@ -247,11 +246,12 @@ void telegramHandler()
 
 void handleNewMessages(int numNewMessages)
 {
-#if DEBUG_TELEGRAM
-    Serial.print("Got ");
-    Serial.print(numNewMessages);
-    Serial.println(" new messages");
-#endif
+    if (DEBUG_SERIAL)
+    {
+        Serial.print("Got ");
+        Serial.print(numNewMessages);
+        Serial.println(" new messages");
+    }
 
     for (int i = 0; i < numNewMessages; i++)
     {
@@ -358,9 +358,19 @@ void parseCommand(String command)
 
 void heaterHandler()
 {
+    static uint16_t anOld = 0;
+    // static bool oneShot = true;
+
     switch (currentMode)
     {
     case HOT:
+        if (an != anOld)
+        {
+            anOld = an;
+
+            bot->sendMessage(chatId, "Hot in progress: " + String(an) + " C", "");
+        }
+
         if (an >= hotVal)
         {
             bot->sendMessage(chatId, "Hot complete", "");
@@ -371,9 +381,22 @@ void heaterHandler()
         break;
     case TERMO:
         if (an >= termoVal)
+        {
             digitalWrite(HEATER_PIN, LOW);
+
+            if (oneShot)
+            {
+                oneShot = false;
+
+                bot->sendMessage(chatId, "Termo reached: " + String(termoVal) + " C", "");
+            }
+        }
         else if (an < termoVal - HYSTERESIS)
+        {
+            oneShot = true;
+
             digitalWrite(HEATER_PIN, HIGH);
+        }
 
         break;
     }
@@ -429,6 +452,7 @@ void setHeaterTermo()
     if (termoVal > 0 && termoVal <= 100)
     {
         currentMode = TERMO;
+        oneShot = true;
 
         if (an > termoVal)
             bot->sendMessage(chatId, "Curent temp above requested", "");
@@ -495,54 +519,57 @@ void loadConfig()
         {
             JsonDocument doc;
             DeserializationError error = deserializeJson(doc, configFile);
+
             if (!error)
             {
                 botToken = doc["bot_token"].as<String>();
                 chatId = doc["chat_id"].as<String>();
-#if DEBUG_TELEGRAM
-                Serial.println("Config loaded:");
-                Serial.println("  Token: " + botToken);
-                Serial.println("  ChatID: " + chatId);
-#endif
+
+                if (DEBUG_SERIAL)
+                {
+                    Serial.println("Config loaded:");
+                    Serial.println("  Token: " + botToken);
+                    Serial.println("  ChatID: " + chatId);
+                }
             }
             else
             {
-#if DEBUG_TELEGRAM
-                Serial.println("Failed to load json config");
-#endif
+                if (DEBUG_SERIAL)
+                    Serial.println("Failed to load json config");
             }
+
             configFile.close();
         }
     }
     else
     {
-#if DEBUG_TELEGRAM
-        Serial.println("Config file not found.");
-#endif
+        if (DEBUG_SERIAL)
+            Serial.println("Config file not found.");
     }
 }
 
 void saveConfig(const char *token, const char *chat)
 {
     JsonDocument doc;
+
     doc["bot_token"] = token;
     doc["chat_id"] = chat;
 
     File configFile = LittleFS.open("/config.json", "w");
+
     if (!configFile)
     {
-#if DEBUG_TELEGRAM
-        Serial.println("Failed to open config file for writing");
-#endif
+        if (DEBUG_SERIAL)
+            Serial.println("Failed to open config file for writing");
+
         return;
     }
 
     serializeJson(doc, configFile);
     configFile.close();
 
-#if DEBUG_TELEGRAM
-    Serial.println("Config saved.");
-#endif
+    if (DEBUG_SERIAL)
+        Serial.println("Config saved.");
 }
 
 void saveLastMessageId(long id)
@@ -553,15 +580,14 @@ void saveLastMessageId(long id)
     {
         file.print(id);
         file.close();
-#if DEBUG_TELEGRAM
-        Serial.println("Saved last message ID: " + String(id));
-#endif
+
+        if (DEBUG_SERIAL)
+            Serial.println("Saved last message ID: " + String(id));
     }
     else
     {
-#if DEBUG_TELEGRAM
-        Serial.println("Failed to open last_msg_id.txt for writing");
-#endif
+        if (DEBUG_SERIAL)
+            Serial.println("Failed to open last_msg_id.txt for writing");
     }
 }
 
@@ -570,10 +596,13 @@ long loadLastMessageId()
     if (LittleFS.exists("/last_msg_id.txt"))
     {
         File file = LittleFS.open("/last_msg_id.txt", "r");
+
         if (file)
         {
             String id_str = file.readString();
+
             file.close();
+
             if (id_str.length() > 0)
             {
                 return atol(id_str.c_str());
@@ -591,20 +620,26 @@ void setupOTA()
     ArduinoOTA.onStart([]()
                        {
     String type;
+
     if (ArduinoOTA.getCommand() == U_FLASH) {
       type = "sketch";
     } else { // U_FS
       type = "filesystem";
+
       LittleFS.end();
     }
+
     Serial.println("Start updating " + type); });
+
     ArduinoOTA.onEnd([]()
                      { Serial.println("\nEnd"); });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
                           { Serial.printf("Progress: %u%%\r", (progress / (total / 100))); });
     ArduinoOTA.onError([](ota_error_t error)
                        {
+
     Serial.printf("Error[%u]: ", error);
+
     if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
     else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
     else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
